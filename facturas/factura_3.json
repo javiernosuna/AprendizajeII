@@ -1,0 +1,15 @@
+{
+    "viandas": [
+        "3 Gigantes de Brioche Dog",
+        "3 Aguas",
+        "1 Helado del Gigante de fresa"
+    ],
+    "precios_viandas": [
+        45,
+        6,
+        4
+    ],
+    "modo_entrega": "domicilio",
+    "direccion_entrega": "Calle Juana Franco, número 65, Pinto, Madrid",
+    "total": 58
+}
