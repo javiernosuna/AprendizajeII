@@ -1,13 +1,20 @@
 {
     "viandas": [
-        "La Mixta",
-        "Coca-Cola"
+        "Caballero de la Triste Queso",
+        "Marcela la Vegana",
+        "El César",
+        "Agua",
+        "Agua"
     ],
     "precios_viandas": [
+        14,
         15,
-        3
+        6,
+        2,
+        2
     ],
     "modo_entrega": "domicilio",
-    "direccion_entrega": "Calle Juana Francés, número 62, Pinto, Madrid",
-    "total": 21
+    "direccion_entrega": "Calle Juana Francés número 63, Pinto, Madrid",
+    "fecha_pedido": "22/11/2021 18:45",
+    "total": 42
 }
