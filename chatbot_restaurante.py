@@ -304,7 +304,7 @@ env_button = pn.widgets.Button(
 )
 env_button.on_click(enviar_mensaje)
 
-# Manejar la tecla Enter - CORRECCIÓN PRINCIPAL
+# Manejar la tecla Enter
 input_box.param.watch(
     lambda event: enviar_mensaje() if event.new and hasattr(event, 'key') and event.key == "Enter" else None, 
     "value"
