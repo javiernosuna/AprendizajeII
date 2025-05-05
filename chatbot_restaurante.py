@@ -1,13 +1,23 @@
 import panel as pn
 import os
 import json
+import logging
 from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# Cargar variables del entorno
+# Configuración inicial
 load_dotenv()
 pn.extension()
+
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    filename='chatbot.log',
+    filemode='a'
+)
+logger = logging.getLogger(__name__)
 
 # Crear cliente OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -25,22 +35,20 @@ DON_QUIJOTE_THEME = {
 # Panel de conversación
 chat_pane = pn.pane.Markdown(
     "", 
-    width=600, 
-    height=400, 
     sizing_mode="stretch_both", 
     styles={
         "overflow-y": "auto", 
         "border": f"2px solid {DON_QUIJOTE_THEME['border']}", 
         "background-color": DON_QUIJOTE_THEME["background"], 
         "padding": "10px",
-        "border-radius": "5px"
+        "border-radius": "5px",
+        "min-height": "400px"
     }
 )
 
 # Caja de entrada
 input_box = pn.widgets.TextInput(
     placeholder="Haz tu pedido o consulta aquí...", 
-    width=500,
     styles={"background": "white"}
 )
 
@@ -96,89 +104,165 @@ conversation = [
 ]
 
 pedido_json = None
-factura_pane = pn.pane.HTML("", width=600, height=300, sizing_mode="stretch_width", visible=False)
+factura_pane = pn.pane.HTML("", sizing_mode="stretch_width", visible=False)
+status_pane = pn.pane.Alert("", alert_type="light", visible=False)
+
+def guardar_factura(pedido):
+    """Guarda la factura en formato JSON en la carpeta facturas/"""
+    try:
+        os.makedirs("facturas", exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        ruta = os.path.join("facturas", f"factura_{timestamp}.json")
+        
+        with open(ruta, "w", encoding="utf-8") as f:
+            json.dump(pedido, f, ensure_ascii=False, indent=4)
+            
+        logger.info(f"Factura guardada en {ruta}")
+        return True
+    except Exception as e:
+        logger.error(f"Error al guardar factura: {e}")
+        return False
+
+def extraer_json(respuesta):
+    """Intenta extraer un JSON válido de la respuesta del chatbot"""
+    try:
+        # Buscar el inicio y fin del JSON
+        inicio = respuesta.find("{")
+        fin = respuesta.rfind("}") + 1
+        
+        if inicio == -1 or fin == 0:
+            logger.warning("No se encontró JSON en la respuesta")
+            return None
+            
+        json_str = respuesta[inicio:fin]
+        logger.debug(f"JSON extraído: {json_str}")
+        
+        # Parsear y validar el JSON
+        pedido = json.loads(json_str)
+        campos_requeridos = ["viandas", "precios_viandas", "modo_entrega", "total"]
+        
+        if not all(campo in pedido for campo in campos_requeridos):
+            logger.warning(f"JSON incompleto. Faltan campos requeridos: {campos_requeridos}")
+            return None
+            
+        if pedido["modo_entrega"] == "domicilio" and "direccion_entrega" not in pedido:
+            logger.warning("Falta dirección de entrega para pedido a domicilio")
+            return None
+            
+        if len(pedido["viandas"]) != len(pedido["precios_viandas"]):
+            logger.warning("Número de viandas no coincide con número de precios")
+            return None
+            
+        return pedido
+    except json.JSONDecodeError as e:
+        logger.error(f"Error al decodificar JSON: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"Error inesperado al procesar JSON: {e}")
+        return None
 
 def generar_factura_html(pedido):
     """Genera una factura en formato HTML con estilo de ticket de restaurante"""
-    fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
-    
-    items_html = ""
-    for item, precio in zip(pedido["viandas"], pedido["precios_viandas"]):
-        items_html += f"""
-        <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-            <span>{item}</span>
-            <span>{precio} €</span>
-        </div>
-        """
-    
-    entrega_html = ""
-    if pedido["modo_entrega"] == "domicilio":
-        entrega_html = f"""
-        <div style="margin-top: 10px;">
-            <div><strong>Dirección de entrega:</strong> {pedido["direccion_entrega"]}</div>
-            <div style="display: flex; justify-content: space-between;">
-                <span>Gastos de envío:</span>
-                <span>3.00 €</span>
+    try:
+        fecha = datetime.now().strftime("%d/%m/%Y %H:%M")
+        
+        items_html = ""
+        for item, precio in zip(pedido["viandas"], pedido["precios_viandas"]):
+            items_html += f"""
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <span>{item}</span>
+                <span>{precio} €</span>
+            </div>
+            """
+        
+        entrega_html = ""
+        if pedido["modo_entrega"] == "domicilio":
+            entrega_html = f"""
+            <div style="margin-top: 10px;">
+                <div><strong>Dirección de entrega:</strong> {pedido["direccion_entrega"]}</div>
+                <div style="display: flex; justify-content: space-between;">
+                    <span>Gastos de envío:</span>
+                    <span>3.00 €</span>
+                </div>
+            </div>
+            """
+        
+        factura_html = f"""
+        <div style="
+            font-family: 'Courier New', monospace;
+            background-color: white;
+            padding: 20px;
+            border: 2px dashed {DON_QUIJOTE_THEME['border']};
+            border-radius: 5px;
+            max-width: 400px;
+            margin: 0 auto;
+        ">
+            <div style="text-align: center; margin-bottom: 15px;">
+                <h2 style="margin: 0; color: {DON_QUIJOTE_THEME['primary']}; font-weight: bold;">RESTAURANTE DON QUIJOTE</h2>
+                <div style="font-size: 0.9em;">{fecha}</div>
+                <div style="border-top: 1px dashed #ccc; margin: 10px 0;"></div>
+            </div>
+            
+            {items_html}
+            
+            <div style="border-top: 1px dashed #ccc; margin: 10px 0;"></div>
+            
+            {entrega_html}
+            
+            <div style="display: flex; justify-content: space-between; font-weight: bold; margin-top: 10px;">
+                <span>TOTAL:</span>
+                <span>{pedido["total"]} €</span>
+            </div>
+            
+            <div style="text-align: center; margin-top: 15px; font-style: italic; color: {DON_QUIJOTE_THEME['secondary']};">
+                ¡Gracias por su pedido, noble caballero o dama!
             </div>
         </div>
         """
-    
-    factura_html = f"""
-    <div style="
-        font-family: 'Courier New', monospace;
-        background-color: white;
-        padding: 20px;
-        border: 2px dashed {DON_QUIJOTE_THEME['border']};
-        border-radius: 5px;
-        max-width: 400px;
-        margin: 0 auto;
-    ">
-        <div style="text-align: center; margin-bottom: 15px;">
-            <h2 style="margin: 0; color: {DON_QUIJOTE_THEME['primary']}; font-weight: bold;">RESTAURANTE DON QUIJOTE</h2>
-            <div style="font-size: 0.9em;">{fecha}</div>
-            <div style="border-top: 1px dashed #ccc; margin: 10px 0;"></div>
-        </div>
         
-        {items_html}
-        
-        <div style="border-top: 1px dashed #ccc; margin: 10px 0;"></div>
-        
-        {entrega_html}
-        
-        <div style="display: flex; justify-content: space-between; font-weight: bold; margin-top: 10px;">
-            <span>TOTAL:</span>
-            <span>{pedido["total"]} €</span>
-        </div>
-        
-        <div style="text-align: center; margin-top: 15px; font-style: italic; color: {DON_QUIJOTE_THEME['secondary']};">
-            ¡Gracias por su pedido, noble caballero o dama!
-        </div>
-    </div>
-    """
-    
-    return factura_html
+        return factura_html
+    except Exception as e:
+        logger.error(f"Error al generar factura HTML: {e}")
+        return "<div style='color: red;'>Error al generar la factura</div>"
 
-# Función de interacción
+def mostrar_mensaje_estado(mensaje, tipo="success", tiempo=3):
+    """Muestra un mensaje de estado temporal"""
+    status_pane.alert_type = tipo
+    status_pane.object = mensaje
+    status_pane.visible = True
+    
+    def ocultar():
+        status_pane.visible = False
+        
+    if tiempo > 0:
+        pn.state.add_periodic_callback(ocultar, period=tiempo*1000, count=1)
+
 def enviar_mensaje(event=None):
     global pedido_json
-
+    
     user_input = input_box.value.strip()
     if not user_input:
+        mostrar_mensaje_estado("Por favor, escribe tu mensaje", "warning")
         return
-
+    
+    logger.info(f"Usuario: {user_input}")
     conversation.append({"role": "user", "content": user_input})
 
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=conversation
+            messages=conversation,
+            temperature=0.7
         )
         reply = response.choices[0].message.content
+        logger.info(f"Chatbot: {reply[:200]}...")  # Log parcial para no saturar
     except Exception as e:
-        reply = f"⚠️ Error al contactar con el asistente:\n\n{e}"
+        reply = f"⚠️ Error al contactar con el asistente:\n\n{str(e)}"
+        logger.error(f"Error en OpenAI: {str(e)}")
 
     conversation.append({"role": "assistant", "content": reply})
 
+    # Actualizar el chat
     chat_md = ""
     for msg in conversation[1:]:
         role = "🧑 Tú" if msg["role"] == "user" else "🤖 Don Quijote"
@@ -187,35 +271,31 @@ def enviar_mensaje(event=None):
 
     # Verificar si hay que mostrar factura
     if "[MOSTRAR_FACTURA]" in reply:
-        try:
-            inicio_json = reply.index("{")
-            fin_json = reply.rindex("}") + 1
-            json_str = reply[inicio_json:fin_json]
-            pedido_json = json.loads(json_str)
-
+        pedido_json = extraer_json(reply)
+        
+        if pedido_json:
             # Generar y mostrar factura
             factura_html = generar_factura_html(pedido_json)
             factura_pane.object = factura_html
             factura_pane.visible = True
             
             # Guardar factura
-            os.makedirs("facturas", exist_ok=True)
-            numero = len(os.listdir("facturas")) + 1
-            ruta = os.path.join("facturas", f"factura_{numero}.json")
-            with open(ruta, "w", encoding="utf-8") as f:
-                json.dump(pedido_json, f, ensure_ascii=False, indent=4)
-        except Exception as e:
-            print(f"Error al procesar factura: {e}")
+            if guardar_factura(pedido_json):
+                mostrar_mensaje_estado("Factura generada y guardada correctamente", "success")
+            else:
+                mostrar_mensaje_estado("Factura generada pero no se pudo guardar", "warning")
+        else:
+            mostrar_mensaje_estado("Error al procesar la factura. Inténtalo de nuevo.", "danger")
+            factura_pane.visible = False
     else:
         factura_pane.visible = False
 
     input_box.value = ""
 
-# Botón
+# Botón de enviar
 env_button = pn.widgets.Button(
-    name="Enviar", 
+    name="Enviar ⚔️", 
     button_type="primary", 
-    width=100,
     styles={
         "background": DON_QUIJOTE_THEME["primary"],
         "color": "white",
@@ -223,7 +303,12 @@ env_button = pn.widgets.Button(
     }
 )
 env_button.on_click(enviar_mensaje)
-input_box.param.watch(lambda e: enviar_mensaje() if "\n" not in e.new else None, 'value')
+
+# Manejar la tecla Enter - CORRECCIÓN PRINCIPAL
+input_box.param.watch(
+    lambda event: enviar_mensaje() if event.new and hasattr(event, 'key') and event.key == "Enter" else None, 
+    "value"
+)
 
 # CSS personalizado
 pn.config.raw_css.append(f"""
@@ -248,6 +333,13 @@ body {{
 h1, h2, h3 {{
     color: {DON_QUIJOTE_THEME['primary']} !important;
 }}
+.bk-btn-primary {{
+    background-color: {DON_QUIJOTE_THEME['primary']} !important;
+    border-color: {DON_QUIJOTE_THEME['border']} !important;
+}}
+.bk-btn-primary:hover {{
+    background-color: {DON_QUIJOTE_THEME['accent']} !important;
+}}
 """)
 
 # Layout principal
@@ -260,7 +352,8 @@ app = pn.Column(
     ),
     chat_pane,
     factura_pane,
-    pn.Row(input_box, env_button, align="center"),
+    status_pane,
+    pn.Row(input_box, env_button, align="center", sizing_mode="stretch_width"),
     css_classes=["app-container"],
     styles={"background": "white"}
 )
@@ -269,4 +362,4 @@ app = pn.Column(
 app.servable()
 
 # Para ejecutar
-# panel serve chatbot_restaurante.py --autoreload 
+# panel serve chatbot_restaurante.py --autoreload

@@ -1,0 +1,17 @@
+{
+    "viandas": [
+        "Caballero de la Triste Queso",
+        "Cervantes Clásica",
+        "Cola Cola",
+        "Cola Cola"
+    ],
+    "precios_viandas": [
+        14,
+        14,
+        3,
+        3
+    ],
+    "modo_entrega": "domicilio",
+    "direccion_entrega": "Calle Pepito, Numero 31, Valdemoro, Madrid",
+    "total": 48
+}

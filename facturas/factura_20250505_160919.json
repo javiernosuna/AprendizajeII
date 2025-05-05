@@ -1,0 +1,13 @@
+{
+    "viandas": [
+        "La Sanchopanza",
+        "Agua"
+    ],
+    "precios_viandas": [
+        12,
+        3
+    ],
+    "modo_entrega": "domicilio",
+    "direccion_entrega": "Calle Juana Francés, número 21, Pinto, Madrid",
+    "total": 18
+}
